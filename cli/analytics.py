@@ -3,6 +3,8 @@ import json
 from cliutils import JSONLoadsString
 import datetime
 import pytz
+from qparser import QueryStringParser, EvalStringParser
+
 
 SAFE_COUNT = 20
 
@@ -13,6 +15,10 @@ AGGREGATE = "aggregate"
 GROUPBY = "group by"
 FILTERS = "filters"
 
+#query type
+METRIC = "METRIC"
+EVAL = "EVAL"
+
 #Granularity controls amount and also impacts asof_tolerance during alignment of time series; defaulted to 1min
 __GRANULARITY_ = 60000
 __EPOCH_TIME_ = datetime.datetime(1970,1,1,tzinfo=pytz.utc) 
@@ -22,6 +28,22 @@ def SetGranularity(granularity):
 
 def GetGranularity():
     return __GRANULARITY_
+
+def getQueryName(i):
+    # first query name is A, second is B, ... 27th query is AA and so on
+    nameString = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    if i <= 26 :
+        return nameString[i-1]
+    q = (i-1) / 26
+    r = i - 26*q
+    return getQueryName(q)+getQueryName(r)
+
+def getQueryType(qstr):
+    evalPattern = re.compile(r"=[ ]*eval[ ]*\[")
+    evalList = re.findall(evalPattern, qstr)
+    if len(evalList) !=0:
+        return EVAL
+    return METRIC
 
 def CreateDataReference(queryNames):
     refObject = {}
@@ -34,7 +56,7 @@ def CreateDataReference(queryNames):
                     },
                 "ungrouped_cols": "INTERVAL",
                 "aggregation": "count",
-                "sort_by": "A",
+                "sort_by": queryName,
                 "n": SAFE_COUNT,
                 "_type": "topn"
                 },
@@ -85,7 +107,7 @@ def CreateGroupBy(attributes):
     groupByObject = {}
     groupByObject["XAXIS"]= "INTERVAL"
     if len(attributes) <= 0:
-        groupByObject["SERIES_O"] = "none"
+        groupByObject["SERIES_0"] = "none"
         return groupByObject
 
     for i, attribute in enumerate(attributes):
@@ -184,7 +206,8 @@ def CreateQueryOptions(qs):
 
     function = {
             "column":"",
-            "aggregate": qs[AGGREGATE]
+            "aggregate": qs[AGGREGATE],
+            "timeRollup" : qs["timerollup"]
             }
     metrics = {}
     metrics[qs[NAME]] = function
@@ -277,6 +300,12 @@ def CreateQuery(qs):
     queries["queries"].append(query)
     return queries
 
+def CreateQueryFromString(qstr):
+    #parse into a dictionary
+    qs = QueryStringParser(qstr)
+    return CreateQuery(qs)
+
+
 def CreateEvalDataFrame(labels):
     if len(labels) == 0:
         return None
@@ -297,8 +326,7 @@ def CreateEvalDataFrame(labels):
     return dfParent
 
 
-def CreateEvalExpr(evalExpr):
-    
+def CreateEvalExpr(evalExpr):  
     if NAME not in evalExpr.keys():
         return None
     if "expr" not in evalExpr.keys():
@@ -325,6 +353,7 @@ def CreateEvalExpr(evalExpr):
     valueObject["dataframe"]=dfObject
     evalExprStatement["value"]=valueObject
     return evalExprStatement
+
 
 def CreateRollingExpr(rollingExpr):
     if all (k in rollingExpr for k in ("name","reference", "aggregate", "window")):
@@ -373,6 +402,49 @@ def CreateTopnExpr(topnExpr):
         return returnObject 
 
     return None
+
+def CreateQueriesFromStringList(qlist, giveName):
+    # DOESN'T HANDLE SUB-QUERIES!!!
+
+    qcount = len(qlist)
+    queryList = []
+    queryNames = []
+    statements = []
+    for i in range(0, qcount):
+        qstr = qlist[i]
+        if giveName == True:
+            name = getQueryName(i+1)
+            qstr = name + " = " + qstr
+        queryType = getQueryType(qstr)
+        if queryType == METRIC:
+            qs = QueryStringParser(qstr)
+            queryNames.append(qs["name"])
+            statements.append(CreateQueryStatement(qs))
+        if queryType == EVAL:
+            es = EvalStringParser(qstr)
+            queryNames.append(es["name"])
+            statements.append(CreateEvalExpr(es))
+
+    
+    statements.append(CreateDataReference(queryNames))
+
+    queries={}
+    queries["queries"]= []
+    
+    query = {}
+    query["name"]="main query"
+    query["_type"]="assignment"
+
+    valueObject = {}
+    valueObject["statements"]=statements
+    valueObject["_type"]="local_scope"
+     
+    query["value"] = valueObject 
+    
+    queries["queries"].append(query)
+    queries["queryNames"]=queryNames 
+    #print(queries)
+    return queries
 
 
 

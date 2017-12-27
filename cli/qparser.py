@@ -39,6 +39,9 @@ def FiltertoDict(f):
 class Filters(List):
     grammar = "{", optional(csl(Filter)), "}"
 
+class TimeRollup(str):
+    grammar = "[", Aggregate, "]"
+
 class TopKeyword(Keyword):
     grammar = Enum(Keyword("top"))
 
@@ -89,11 +92,11 @@ def TSValueInMS(tsStr):
     return 0
     
 class Timeshift(List):
-    grammar = attr("keyword", TimeshiftKeyword), attr("value", TimeshiftValue)
+    grammar = attr("keyword", TimeshiftKeyword), "(", attr("value", TimeshiftValue), ")"
 
 # Query Syntax  "A = avg(http.request_response.latency { http.uri ~ "/catalogue" }) by (client.pod_name) top(20) offset 1h"
 class QS(List):
-    grammar = attr("name", QSName), "=", attr("aggregate", Aggregate), "(", attr("datasource", Datasource), attr("filters", optional(Filters)), ")", \
+    grammar = attr("name", QSName), "=", attr("aggregate", Aggregate), "(", attr("datasource", Datasource), attr("filters", optional(Filters)), attr("timerollup",optional(TimeRollup)), ")", \
 			attr("groupby", optional(GroupBy)), attr("timeshift", optional(Timeshift))
   
 #convert the qs object to dictionary
@@ -102,10 +105,17 @@ def QStoDict(qs):
     qsDict["name"] = qs.name
     qsDict["aggregate"] = qs.aggregate
     qsDict["datasource"] = qs.datasource
+    
     qsDict["filters"] = []
     if qs.filters != None:   
         for f in qs.filters:
             qsDict["filters"].append(FiltertoDict(f))
+            
+    qsDict["timerollup"]= ""
+
+    if qs.timerollup != None:
+        qsDict["timerollup"] = qs.timerollup
+
     qsDict["groupby"] = []
     if qs.groupby != None:
         for attr in qs.groupby:
@@ -135,8 +145,16 @@ class EvalExprKeyword(Keyword):
 class EvalExpr(str):
     grammar = re.compile(r"[a-zA-Z0-9\$\+\-\*\.\_\(\)\/]+")
 
-class EvalStmt(List):
+# A = eval[expression] 
+class ES(List):
     grammar = attr("name", QSName), "=", attr("keyword", EvalExprKeyword), "[", attr("expr", EvalExpr), "]"
+
+
+def EStoDict(es):
+    esDict = {}
+    esDict["name"] = es.name
+    esDict["expr"] = es.expr
+    return esDict
 
 class RollingExprKeyword(Keyword):
     grammar = Enum(Keyword("rolling"))
@@ -192,4 +210,6 @@ def QueryStringParser(qstr):
     qs = parse(qstr, QS)
     return QStoDict(qs)
 
-
+def EvalStringParser(qstr):
+    qs = parse(qstr, ES)
+    return EStoDict(qs)
