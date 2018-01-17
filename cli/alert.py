@@ -12,7 +12,7 @@ import sys
 
 #== Command Execution Functions ==
 
-def GetAlertList(verbose = 0):
+def GetAlertList(verbose = 0, name = None):
     with session() as c:
         c.post(GetAuthURL(), data=GetCredentials())
         response = c.get(GetAlertURL())
@@ -25,6 +25,16 @@ def GetAlertList(verbose = 0):
             print json.dumps(parsed, indent=4, sort_keys=True)
         else:
             PrettyPrint(parsed, ["id", "name"])
+        
+        idlist = ""
+        if name != None:
+            print "Alert Ids with names containing : " + name
+            for m in parsed:
+                if name in m["name"]:
+                    idlist = idlist + m["id"] + " "
+            print idlist
+
+        
         return parsed
 
 
@@ -49,12 +59,15 @@ def GetAlertDetails(keys, id):
         return
 
 
-def DeleteAlert(id):
+def DeleteAlert(idlist):
     with session() as c:
         c.post(GetAuthURL(), data=GetCredentials())
-        alertURL = GetAlertDetailsURL()
-        alertURL = alertURL + "/" + id
-        response = c.delete(alertURL)
+        for id in idlist:
+            print "Deleting Alert " + id
+            alertURL = GetAlertDetailsURL()
+            alertURL = alertURL + "/" + id
+            response = c.delete(alertURL)
+            print response
         return  
 
 
@@ -196,9 +209,10 @@ def ImportAlert(fname):
 #== CLI Commands ==
 @click.command()
 @click.option('-v', '--verbose', default=1, help='Verbose level 1 (id, name); > 1 (all)')
-def list(verbose):
+@click.option('-n', '--name', help='Provide substring to look for in the name of alert')
+def list(verbose, name):
     '''List all alerts '''
-    GetAlertList(verbose)
+    GetAlertList(verbose, name)
 
 
 @click.command()
@@ -210,7 +224,7 @@ def get(key, alert_id):
 
 
 @click.command()
-@click.argument('alert_id')
+@click.argument('alert_id', nargs=-1)
 def delete(alert_id):
     ''' Delete Alert '''
     if click.confirm("Do you want to delete the alert?"):

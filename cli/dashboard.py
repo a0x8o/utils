@@ -23,13 +23,15 @@ def generateId():
 
     return id
 
-def DeleteDashboard(dbid):
+def DeleteDashboard(dbidlist):
     with session() as c:
         c.post(GetAuthURL(), data=GetCredentials())
-        dbURL = GetDashboardURL()
-        dbURL = dbURL + "/" + dbid
-        response = c.delete(dbURL)
-        print response        
+        for dbid in dbidlist:
+            print "Deleting Dashboard " + dbid
+            dbURL = GetDashboardURL()
+            dbURL = dbURL + "/" + dbid
+            response = c.delete(dbURL)
+            print response        
         return 
 
 def GetDashboard(keys, dbid):
@@ -50,7 +52,7 @@ def GetDashboard(keys, dbid):
         return parsed
 
 
-def GetDashboardList(verbose=0):
+def GetDashboardList(verbose=0, name=None):
     with session() as c:
         c.post(GetAuthURL(), data=GetCredentials())
         response = c.get(GetDashboardURL())
@@ -62,6 +64,15 @@ def GetDashboardList(verbose=0):
             print json.dumps(parsed, indent=4, sort_keys=True)
         else:
             PrettyPrint(parsed, ["id", "dashboardName"])
+        
+        idlist = ""
+        if name != None:
+            print "Dashboard Ids with names containing : " + name
+            for m in parsed:
+                if name in m["dashboardName"]:
+                    idlist = idlist + m["id"] + " "
+            print idlist
+
         return parsed
     
 
@@ -73,7 +84,9 @@ def CreateDashboard(name):
         dashboardURL = GetDashboardURL()
         response = c.post(dashboardURL, json=db)
         parsed = json.loads(response.text)
-        print json.dumps(parsed, indent=4, sort_keys=True)
+        #print json.dumps(parsed, indent=4, sort_keys=True)
+        print "Created Dashboard:"
+        print "name: " + parsed["dashboardName"] + ", id: " + parsed["id"] 
         return parsed 
 
 def AddChart(plot, dashboard_id, name, query):
@@ -83,7 +96,7 @@ def AddChart(plot, dashboard_id, name, query):
     vizSpecs = {}
     plotType = plot + "-chart"
     vizSpecs["selectedReferences"]=tmpQueries["queryNames"]
-    vizSpecs["labels"]={}
+    vizSpecs["labels"]={"main query":tmpQueries["labels"]}
     vizSpecs["chartTypes"]={"main query":plotType}
     vizSpecs["chartTitle"]= name
     vizSpecs["position"]= { "row":0, "col":0, "size_x":1, "size_y":1 }
@@ -99,7 +112,6 @@ def AddChart(plot, dashboard_id, name, query):
         db["spec"]["widgets"][chartId]=chart
         response = c.post(dashboardURL, json=db)
         parsed = json.loads(response.text)
-        print(parsed)
         #print json.dumps(parsed, indent=4, sort_keys=True)
         return parsed
 
@@ -152,7 +164,7 @@ def ImportDashboard(fname):
 
 
 @click.command()
-@click.argument('dashboardid')
+@click.argument('dashboardid', nargs=-1)
 def delete(dashboardid):
     ''' Delete Dashboard '''
     if click.confirm("Do you want to delete the dashboard?"):
@@ -169,9 +181,10 @@ def get(key, dashboardid):
 
 @click.command()
 @click.option('-v', '--verbose', default=1, help='Verbose level 1 (id, name); > 1 (all)')
-def list(verbose):
+@click.option('-n', '--name', help='Provide substring to look for in the name of dashboard')
+def list(verbose, name):
     '''List All Dashboards '''
-    GetDashboardList(verbose)
+    GetDashboardList(verbose, name)
 
 
 @click.command()
